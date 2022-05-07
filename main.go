@@ -5,19 +5,13 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"math"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 )
 
-type response struct {
-	StandardDeviation float64 `json:"stddev"`
-	NumList           []int   `json:"data"`
-}
-
-func getRandom(length int, wg *sync.WaitGroup, responses chan response) int {
+func getRandom(length int, wg *sync.WaitGroup, responses chan Response) int {
 	var netClient = &http.Client{}
 
 	requestUrl := "https://www.random.org/integers/?num=%d&min=1&max=100&col=1&base=10&format=plain&rnd=new"
@@ -36,8 +30,7 @@ func getRandom(length int, wg *sync.WaitGroup, responses chan response) int {
 	return 1
 }
 
-func handleResponse(resp *http.Response) response {
-	log.Println("handle response")
+func handleResponse(resp *http.Response) Response {
 	body, _ := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
 	split := strings.Split(string(body), "\n")
@@ -48,28 +41,11 @@ func handleResponse(resp *http.Response) response {
 		t2 = append(t2, j)
 	}
 	log.Println(split)
-	return response{getStdDev(t2), t2}
-}
-
-func getStdDev(t2 []int) float64 {
-	mean := getMean(t2)
-	var standardDeviation float64 = 0
-	for _, i := range t2 {
-		standardDeviation += math.Pow(float64(i)-mean, 2)
-	}
-	return math.Sqrt(standardDeviation / float64(len(t2)))
-}
-
-func getMean(t2 []int) float64 {
-	var mean float64 = 0
-	for _, i := range t2 {
-		mean += float64(i)
-	}
-	return mean / float64(len(t2))
+	return Response{getStdDev(t2), t2}
 }
 
 func serverRequest(w http.ResponseWriter, r *http.Request) {
-	var simpleList = []response{}
+	var simpleList = []Response{}
 
 	requestParam, ok := r.URL.Query()["requests"]
 	if !ok || len(requestParam[0]) < 1 {
@@ -87,7 +63,7 @@ func serverRequest(w http.ResponseWriter, r *http.Request) {
 	length, _ := strconv.Atoi(lengthParam[0])
 	w.Header().Set("Content-Type", "application/json")
 	var wg sync.WaitGroup
-	responses := make(chan response, length)
+	responses := make(chan Response, length)
 	wg.Add(requestNumber)
 	n := 0
 	for n < requestNumber {
@@ -104,7 +80,7 @@ func serverRequest(w http.ResponseWriter, r *http.Request) {
 		simpleList = append(simpleList, requestDataList)
 		n++
 	}
-	simpleList = append(simpleList, response{getStdDev(globalDataList), globalDataList})
+	simpleList = append(simpleList, Response{getStdDev(globalDataList), globalDataList})
 
 	json.NewEncoder(w).Encode(simpleList)
 
