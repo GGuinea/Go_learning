@@ -41,8 +41,8 @@ func handleResponse(resp *http.Response) response {
 	split := strings.Split(string(body), "\n")
 	t2 := []int{}
 
-	for _, i := range split {
-		j, _ := strconv.Atoi(i)
+	for i := 0; i < len(split)-1; i++ {
+		j, _ := strconv.Atoi(split[i])
 		t2 = append(t2, j)
 	}
 	log.Println(split)
@@ -95,10 +95,14 @@ func serverRequest(w http.ResponseWriter, r *http.Request) {
 	wg.Wait()
 	n = 0
 	close(responses)
+	globalDataList := []int{}
 	for n <= len(responses) {
-		simpleList = append(simpleList, <-responses)
+		requestDataList := <-responses
+		globalDataList = append(globalDataList, requestDataList.NumList...)
+		simpleList = append(simpleList, requestDataList)
 		n++
 	}
+	simpleList = append(simpleList, response{getStdDev(globalDataList), globalDataList})
 
 	json.NewEncoder(w).Encode(simpleList)
 
