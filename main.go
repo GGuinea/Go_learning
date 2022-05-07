@@ -2,24 +2,72 @@ package main
 
 import (
 	"encoding/json"
+	"io/ioutil"
 	"log"
+	"math"
 	"net/http"
+	"strconv"
+	"strings"
+	"sync"
 )
 
 type response struct {
-	StandardDeviation int   `json:"stddev"`
-	NumList           []int `json:"data"`
+	StandardDeviation float64 `json:"stddev"`
+	NumList           []int   `json:"data"`
 }
 
-func getRandom(length int) int {
-	return length
+func getRandom(length int, wg *sync.WaitGroup, responses chan response) int {
+	var netClient = &http.Client{}
+
+	resp, err := netClient.Get("https://www.random.org/integers/?num=10&min=1&max=100&col=1&base=10&format=plain&rnd=new")
+
+	if err != nil {
+		log.Println(err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("http request returned code %d\n", resp.StatusCode)
+	}
+
+	responses <- handleResponse(resp) // Return error if there is one, nil if not.
+	defer wg.Done()
+	return 1
+}
+
+func handleResponse(resp *http.Response) response {
+	log.Println("handle response")
+	body, _ := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
+	split := strings.Split(string(body), "\n")
+	t2 := []int{}
+
+	for _, i := range split {
+		j, _ := strconv.Atoi(i)
+		t2 = append(t2, j)
+	}
+	log.Println(split)
+	return response{getStdDev(t2), t2}
+}
+
+func getStdDev(t2 []int) float64 {
+	mean := getMean(t2)
+	var standardDeviation float64 = 0
+	for _, i := range t2 {
+		standardDeviation += math.Pow(float64(i)-mean, 2)
+	}
+	return math.Sqrt(standardDeviation / float64(len(t2)))
+}
+
+func getMean(t2 []int) float64 {
+	var mean float64 = 0
+	for _, i := range t2 {
+		mean += float64(i)
+	}
+	return mean / float64(len(t2))
 }
 
 func serverRequest(w http.ResponseWriter, r *http.Request) {
-	var simpleList = []response{
-		{StandardDeviation: 43, NumList: []int{1, 2, 3, 4}},
-		{StandardDeviation: 23, NumList: []int{2, 2, 2, 2}},
-	}
+	var simpleList = []response{}
 
 	requestParam, ok := r.URL.Query()["requests"]
 	if !ok || len(requestParam[0]) < 1 {
@@ -33,11 +81,25 @@ func serverRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	requestNumber := requestParam[0]
-	length := lengthParam[0]
-	log.Println("is: " + string(requestNumber))
-	log.Println("is: " + string(length))
+	requestNumber, _ := strconv.Atoi(requestParam[0])
+	length, _ := strconv.Atoi(lengthParam[0])
 	w.Header().Set("Content-Type", "application/json")
+	var wg sync.WaitGroup
+	responses := make(chan response, length)
+	wg.Add(requestNumber)
+	n := 0
+	for n < requestNumber {
+		go getRandom(length, &wg, responses)
+		n++
+	}
+	wg.Wait()
+	n = 0
+	close(responses)
+	for n <= len(responses) {
+		simpleList = append(simpleList, <-responses)
+		n++
+	}
+
 	json.NewEncoder(w).Encode(simpleList)
 
 }
