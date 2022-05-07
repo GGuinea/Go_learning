@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"math"
@@ -19,7 +20,8 @@ type response struct {
 func getRandom(length int, wg *sync.WaitGroup, responses chan response) int {
 	var netClient = &http.Client{}
 
-	resp, err := netClient.Get("https://www.random.org/integers/?num=10&min=1&max=100&col=1&base=10&format=plain&rnd=new")
+	requestUrl := "https://www.random.org/integers/?num=%d&min=1&max=100&col=1&base=10&format=plain&rnd=new"
+	resp, err := netClient.Get(fmt.Sprintf(requestUrl, length))
 
 	if err != nil {
 		log.Println(err)
