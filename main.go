@@ -9,10 +9,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 func getRandom(length int, wg *sync.WaitGroup, responses chan DataAggregator) {
-	var netClient = &http.Client{}
+	var netClient = &http.Client{
+		Timeout: time.Second * 10,
+	}
 
 	requestUrl := "https://www.random.org/integers/?num=%d&min=1&max=100&col=1&base=10&format=plain&rnd=new"
 	resp, err := netClient.Get(fmt.Sprintf(requestUrl, length))
