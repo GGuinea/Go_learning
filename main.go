@@ -1,8 +1,8 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
+	"github.com/gin-gonic/gin"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -11,7 +11,7 @@ import (
 	"sync"
 )
 
-func getRandom(length int, wg *sync.WaitGroup, responses chan Response) int {
+func getRandom(length int, wg *sync.WaitGroup, responses chan DataAggregator) {
 	var netClient = &http.Client{}
 
 	requestUrl := "https://www.random.org/integers/?num=%d&min=1&max=100&col=1&base=10&format=plain&rnd=new"
@@ -19,75 +19,97 @@ func getRandom(length int, wg *sync.WaitGroup, responses chan Response) int {
 
 	if err != nil {
 		log.Println(err)
+		return
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		log.Printf("http request returned code %d\n", resp.StatusCode)
+		defer wg.Done()
+		return
+	}
+	data := handleResponse(resp)
+	if data.NumList != nil {
+		responses <- data
 	}
 
-	responses <- handleResponse(resp) // Return error if there is one, nil if not.
 	defer wg.Done()
-	return 1
 }
 
-func handleResponse(resp *http.Response) Response {
+func handleResponse(resp *http.Response) DataAggregator {
 	body, _ := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
 	split := strings.Split(string(body), "\n")
-	t2 := []int{}
+	numbersTable := []int{}
 
 	for i := 0; i < len(split)-1; i++ {
-		j, _ := strconv.Atoi(split[i])
-		t2 = append(t2, j)
+		j, ok := strconv.Atoi(split[i])
+		if ok != nil {
+			log.Printf("Problem with number parsing, %s\n", ok)
+			return DataAggregator{0, nil}
+		}
+		numbersTable = append(numbersTable, j)
 	}
 	log.Println(split)
-	return Response{getStdDev(t2), t2}
+	return DataAggregator{getStdDev(numbersTable), numbersTable}
 }
 
-func serverRequest(w http.ResponseWriter, r *http.Request) {
-	var simpleList = []Response{}
-
-	requestParam, ok := r.URL.Query()["requests"]
-	if !ok || len(requestParam[0]) < 1 {
-		log.Println("Problem with URL param 'rquests'")
+func handleRequest(c *gin.Context) {
+	const requestKey = "requests"
+	var numOfRequests, error = getParamFromUrl(c, requestKey)
+	if error {
+		return
+	}
+	const lengthKey = "length"
+	var numOfNumbers = 0
+	numOfNumbers, error = getParamFromUrl(c, lengthKey)
+	if error {
 		return
 	}
 
-	lengthParam, ok := r.URL.Query()["length"]
-	if !ok || len(lengthParam[0]) < 1 {
-		log.Println("Problem with URL 'length' param")
-		return
-	}
-
-	requestNumber, _ := strconv.Atoi(requestParam[0])
-	length, _ := strconv.Atoi(lengthParam[0])
-	w.Header().Set("Content-Type", "application/json")
+	var dataAggregatorList = []DataAggregator{}
 	var wg sync.WaitGroup
-	responses := make(chan Response, length)
-	wg.Add(requestNumber)
+	responses := make(chan DataAggregator, numOfNumbers)
+	wg.Add(numOfRequests)
 	n := 0
-	for n < requestNumber {
-		go getRandom(length, &wg, responses)
+	for n < numOfRequests {
+		go getRandom(numOfNumbers, &wg, responses)
 		n++
 	}
 	wg.Wait()
-	n = 0
 	close(responses)
+	dataAggregatorList = processData(dataAggregatorList, responses)
+	c.IndentedJSON(http.StatusOK, dataAggregatorList)
+}
+
+func getParamFromUrl(c *gin.Context, keyName string) (int, bool) {
+	var value, ok = strconv.Atoi(c.Query(keyName))
+	if ok != nil || value <= 0 {
+		c.IndentedJSON(http.StatusPreconditionFailed, fmt.Sprintf("Problem with URL '%s' param", keyName))
+		return 0, true
+	}
+	return value, false
+}
+
+func processData(dataAggregatorList []DataAggregator, responses chan DataAggregator) []DataAggregator {
 	globalDataList := []int{}
+	globalDataList, dataAggregatorList = createFinalResponse(responses, globalDataList, dataAggregatorList)
+	dataAggregatorList = append(dataAggregatorList, DataAggregator{getStdDev(globalDataList), globalDataList})
+	return dataAggregatorList
+}
+
+func createFinalResponse(responses chan DataAggregator, globalDataList []int, simpleList []DataAggregator) ([]int, []DataAggregator) {
+	n := 0
 	for n <= len(responses) {
 		requestDataList := <-responses
 		globalDataList = append(globalDataList, requestDataList.NumList...)
 		simpleList = append(simpleList, requestDataList)
 		n++
 	}
-	simpleList = append(simpleList, Response{getStdDev(globalDataList), globalDataList})
-
-	json.NewEncoder(w).Encode(simpleList)
-
+	return globalDataList, simpleList
 }
 
 func main() {
-
-	http.HandleFunc("/random/mean", serverRequest)
-	http.ListenAndServe(":8080", nil)
+	router := gin.Default()
+	router.GET("/random/mean", handleRequest)
+	router.Run("localhost:8080")
 }
