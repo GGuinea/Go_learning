@@ -16,5 +16,10 @@ func getMean(t2 []int) float64 {
 	for _, i := range t2 {
 		mean += float64(i)
 	}
+
+	if mean == 0 {
+		return 0.0
+	}
+
 	return mean / float64(len(t2))
 }
