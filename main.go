@@ -30,7 +30,7 @@ func getRandom(length int, wg *sync.WaitGroup, responses chan DataAggregator) {
 		defer wg.Done()
 		return
 	}
-	data := handleResponse(resp)
+	data := handleExternalResponse(resp)
 	if data.NumList != nil {
 		responses <- data
 	}
@@ -38,7 +38,7 @@ func getRandom(length int, wg *sync.WaitGroup, responses chan DataAggregator) {
 	defer wg.Done()
 }
 
-func handleResponse(resp *http.Response) DataAggregator {
+func handleExternalResponse(resp *http.Response) DataAggregator {
 	body, _ := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
 	split := strings.Split(string(body), "\n")
@@ -55,7 +55,7 @@ func handleResponse(resp *http.Response) DataAggregator {
 	return DataAggregator{getStdDev(numbersTable), numbersTable}
 }
 
-func handleRequest(c *gin.Context) {
+func handleUserRequest(c *gin.Context) {
 	const requestKey = "requests"
 	var numOfRequests, error = getParamFromUrl(c, requestKey)
 	if error {
@@ -112,6 +112,6 @@ func createFinalResponse(responses chan DataAggregator, globalDataList []int, si
 
 func main() {
 	router := gin.Default()
-	router.GET("/random/mean", handleRequest)
+	router.GET("/random/mean", handleUserRequest)
 	router.Run("0.0.0.0:8080")
 }
