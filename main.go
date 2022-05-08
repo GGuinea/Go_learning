@@ -49,7 +49,6 @@ func handleResponse(resp *http.Response) DataAggregator {
 		}
 		numbersTable = append(numbersTable, j)
 	}
-	log.Println(split)
 	return DataAggregator{getStdDev(numbersTable), numbersTable}
 }
 
@@ -111,5 +110,5 @@ func createFinalResponse(responses chan DataAggregator, globalDataList []int, si
 func main() {
 	router := gin.Default()
 	router.GET("/random/mean", handleRequest)
-	router.Run("localhost:8080")
+	router.Run("0.0.0.0:8080")
 }
